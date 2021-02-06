@@ -43,7 +43,13 @@ git clone https://github.com/angristan/feedbin-docker.git
 * Copy `docker-compose-example.yml` to `docker-compose.yml`. If you want to disable a service this is the place.
 * Copy `caddy/example.Caddyfile` to `caddy/Caddyfile` and update the domains.
 
+#### Traefik
+* Copy `.env-traefik.example` to `.env` and fill **ALL** the variables
+* Copy `docker-compose-example-traefik.yml` to `docker-compose.yml`. If you want to disable a service this is the place.
+
 Run the database migrations:
+
+* Start database `docker-compose up -d feedbin-postgres`
 
 ```sh
 docker-compose run --rm feedbin-web rake db:setup

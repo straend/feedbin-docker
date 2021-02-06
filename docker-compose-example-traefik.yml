@@ -1,0 +1,142 @@
+version: '2.2'
+
+volumes:
+  feedbin_redis:
+  feedbin_db:
+  feedbin_elasticsearch:
+  feedbin_minio:
+
+services:
+
+  feedbin-minio:
+    image: minio/minio
+    volumes:
+    - feedbin_minio:/data
+    env_file:
+     - ./.env
+    command: server /data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+    restart: always
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.feedbinminio.rule: "Host(`minio.${FEEDBIN_HOST}`)"
+      traefik.http.routers.feedbinminio.entrypoints: "${TRAEFIK_ENTRYPOINT}"
+      traefik.http.routers.feedbinminio.tls.certresolver: "${TRAEFIK_CERTPROVIDER}"
+      traefik.http.services.feedbinminio.loadbalancer.server.port: "9000"
+
+  feedbin-web:
+    build:
+      context: .
+      args:
+        FEEDBIN_URL: ${FEEDBIN_URL}
+    environment:
+      PORT: 3000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+    env_file:
+     - ./.env
+    command: bundle exec rails s --port 3000 --binding 0.0.0.0
+    restart: always
+    mem_limit: 512m
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.feedbinweb.rule: "Host(`${FEEDBIN_HOST}`)"
+      traefik.http.routers.feedbinweb.entrypoints: "${TRAEFIK_ENTRYPOINT}"
+      traefik.http.routers.feedbinweb.tls.certresolver: "${TRAEFIK_CERTPROVIDER}"
+      traefik.http.services.feedbinweb.loadbalancer.server.port: "3000"
+
+  feedbin-workers:
+    build: .
+    env_file:
+     - ./.env
+    command: foreman start
+    restart: always
+    mem_limit: 512m
+
+  feedbin-elasticsearch:
+    image: elasticsearch:2.4
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+    volumes:
+      - feedbin_elasticsearch:/usr/share/elasticsearch/data
+    environment:
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - discovery.type=single-node
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    mem_limit: 1g
+    restart: always
+
+  feedbin-refresher:
+    build: ./feedbin-refresher
+    env_file:
+     - ./.env
+    restart: always
+    mem_limit: 512m
+
+  feedbin-image:
+    build: ./feedbin-image
+    env_file:
+      - ./.env
+    restart: always
+    mem_limit: 512m
+
+  camo:
+    image: increments/camo
+    environment:
+      - PORT=8081
+    env_file:
+     - ./.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081"]
+    restart: always
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.feedbincamo.rule: "Host(`camo.${FEEDBIN_HOST}`)"
+      traefik.http.routers.feedbincamo.entrypoints: "${TRAEFIK_ENTRYPOINT}}"
+      traefik.http.routers.feedbincamo.tls.certresolver: "${TRAEFIK_CERTPROVIDER}"
+      traefik.http.services.feedbincamo.loadbalancer.server.port: "8081"
+
+  feedbin-memcached:
+    image: memcached:1.5
+    restart: always
+
+  feedbin-redis:
+    image: redis:5
+    command: "redis-server --appendonly yes"
+    volumes:
+      - feedbin_redis:/data
+    restart: always
+
+  feedbin-postgres:
+    image: postgres:13
+    env_file:
+     - ./.env
+    environment:
+     - DATABASE_URL: postgres://$POSTGRES_USERNAME:$POSTGRES_PASSWORD@feedbin-postgres/feedbin_production
+    volumes:
+      - feedbin_db:/var/lib/postgresql/data
+    restart: always
+    mem_limit: 512m
+
+  feedbin-extract:
+    build:
+      context: ./feedbin-extract
+      args:
+        EXTRACT_USER: ${EXTRACT_USER}
+        EXTRACT_SECRET: ${EXTRACT_SECRET}
+    env_file:
+      - ./.env
+    restart: always
+    mem_limit: 512m
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.feedbinextract.rule: "Host(`extract.${FEEDBIN_HOST}`)"
+      traefik.http.routers.feedbinextract.entrypoints: "${TRAEFIK_ENTRYPOINT}"
+      traefik.http.routers.feedbinextract.tls.certresolver: "${TRAEFIK_CERTPROVIDER}"
+      traefik.http.services.feedbinextract.loadbalancer.server.port: "3000"
+
